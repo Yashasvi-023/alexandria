@@ -2,6 +2,14 @@
 import os
 import stat
 from pathlib import Path
+from dataclasses import dataclass
+
+
+@dataclass
+class DiscoveryResult:
+    files: list
+    errors: list
+    scanned_directories: int
 
 
 def discover(
@@ -27,20 +35,21 @@ def discover(
     }
 
     results = []
+    errors = []
+    scanned_directories = 0
+
     stack = [path]
 
     while stack:
-
         current = stack.pop()
+        scanned_directories += 1
 
         try:
-
             with os.scandir(current) as entries:
 
                 for entry in entries:
 
                     try:
-
                         info = entry.stat(follow_symlinks=False)
 
                         attributes = getattr(
@@ -89,11 +98,17 @@ def discover(
                             "modified": info.st_mtime
                         })
 
-                    except OSError:
-                        continue
+                    except OSError as error:
+                        errors.append({
+                            "path": entry.path,
+                            "error": str(error)
+                        })
 
-        except OSError:
-            continue
+        except OSError as error:
+            errors.append({
+                "path": str(current),
+                "error": str(error)
+            })
 
     results.sort(
         key=lambda item: item["size"],
@@ -103,12 +118,16 @@ def discover(
     if limit is not None:
         results = results[:limit]
 
-    return results
+    return DiscoveryResult(
+        files=results,
+        errors=errors,
+        scanned_directories=scanned_directories
+    )
 
 
 if __name__ == "__main__":
 
-    files = discover(
+    result = discover(
         path=r"C:\Program Files",
         min_size=50 * 1024 * 1024,
         limit=10
@@ -116,9 +135,16 @@ if __name__ == "__main__":
 
     print("\nALEXANDRIA DISCOVERY RESULTS\n")
 
-    for file in files:
-
+    for file in result.files:
         print(
             f"{file['name']} | "
             f"{file['size'] / (1024 ** 2):.2f} MB"
         )
+
+    print("\nDISCOVERY SUMMARY")
+    print(f"Files found: {len(result.files)}")
+    print(f"Directories scanned: {result.scanned_directories}")
+    print(f"Errors encountered: {len(result.errors)}")
+
+    for error in result.errors[:5]:
+        print(f"Error: {error['path']} | {error['error']}")
